@@ -6,29 +6,37 @@
 # Requires: gh (authenticated: `gh auth login`), git, jq
 #
 # Usage:
-#   ./backup-github.sh -o wmar [-d ./backups] [-g] [-a]
+#   ./backup-github.sh -o wmar [-d ./backups] [-g] [-a] [-w WORKDIR]
 #
 # Options:
 #   -o OWNER   GitHub user or org login to back up (required)
 #   -d DIR     Destination directory (default: ./backups)
 #   -g         Also back up the owner's gists
-#   -a         After backing up, create a timestamped tar.gz archive of DIR
-#              and prune archives older than 30 days
+#   -a         Create a timestamped tar.gz archive and prune archives older
+#              than 30 days. With -a, the git mirrors themselves are kept in
+#              WORKDIR (local, for fast incremental updates) and only the
+#              resulting .tar.gz (+ log) is written to DEST — so a remote/
+#              network DEST only ever holds the compressed archive, not the
+#              raw .git mirrors. Without -a, DEST holds the mirrors directly.
+#   -w DIR     Local working directory for git mirrors when -a is used
+#              (default: ~/.cache/github-backup)
 #   -h         Show this help
 
 set -euo pipefail
 
 DEST="./backups"
+WORKDIR="$HOME/.cache/github-backup"
 INCLUDE_GISTS=0
 MAKE_ARCHIVE=0
 OWNER=""
 
-usage() { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
-while getopts ":o:d:gah" opt; do
+while getopts ":o:d:w:gah" opt; do
   case "$opt" in
     o) OWNER="$OPTARG" ;;
     d) DEST="$OPTARG" ;;
+    w) WORKDIR="$OPTARG" ;;
     g) INCLUDE_GISTS=1 ;;
     a) MAKE_ARCHIVE=1 ;;
     h) usage 0 ;;
@@ -45,14 +53,23 @@ done
 
 gh auth status >/dev/null 2>&1 || { echo "Error: not authenticated. Run 'gh auth login' first." >&2; exit 1; }
 
-REPO_DIR="$DEST/$OWNER/repos"
-GIST_DIR="$DEST/$OWNER/gists"
-LOG_FILE="$DEST/$OWNER/backup-$(date +%Y%m%d-%H%M%S).log"
+# With -a, mirrors live locally in WORKDIR and only the archive goes to DEST
+# (useful when DEST is a slow/remote mount). Without -a, DEST holds mirrors
+# directly, as before.
+if [[ "$MAKE_ARCHIVE" -eq 1 ]]; then
+  BASE_DIR="$WORKDIR"
+else
+  BASE_DIR="$DEST"
+fi
+
+REPO_DIR="$BASE_DIR/$OWNER/repos"
+GIST_DIR="$BASE_DIR/$OWNER/gists"
+LOG_FILE="$BASE_DIR/$OWNER/backup-$(date +%Y%m%d-%H%M%S).log"
 mkdir -p "$REPO_DIR"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"; }
 
-log "Starting backup of '$OWNER' into $DEST"
+log "Starting backup of '$OWNER' into $BASE_DIR"
 
 # --- Repos ------------------------------------------------------------
 REPO_LIST_FILE="$(mktemp)"
@@ -111,9 +128,10 @@ fi
 
 # --- Archive --------------------------------------------------------------
 if [[ "$MAKE_ARCHIVE" -eq 1 ]]; then
+  mkdir -p "$DEST"
   archive_name="$DEST/$OWNER-$(date +%Y%m%d-%H%M%S).tar.gz"
-  log "Creating archive $archive_name"
-  tar -czf "$archive_name" -C "$DEST/$OWNER" repos $([[ "$INCLUDE_GISTS" -eq 1 ]] && echo gists)
+  log "Creating archive $archive_name (from local $BASE_DIR/$OWNER)"
+  tar -czf "$archive_name" -C "$BASE_DIR/$OWNER" repos $([[ "$INCLUDE_GISTS" -eq 1 ]] && echo gists)
   find "$DEST" -maxdepth 1 -name "$OWNER-*.tar.gz" -mtime +30 -print -delete | while read -r f; do
     log "Pruned old archive $f"
   done
@@ -121,7 +139,9 @@ fi
 
 if [[ ${#FAILED[@]} -gt 0 ]]; then
   log "Completed with ${#FAILED[@]} failure(s): ${FAILED[*]}"
+  [[ "$MAKE_ARCHIVE" -eq 1 ]] && cp "$LOG_FILE" "$DEST/"
   exit 1
 fi
 
 log "Backup complete."
+[[ "$MAKE_ARCHIVE" -eq 1 ]] && cp "$LOG_FILE" "$DEST/"
