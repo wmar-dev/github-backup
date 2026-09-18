@@ -41,27 +41,27 @@ it only ever receives the finished archive. Point `-w` at fast local disk and
 `-d` at wherever you want the durable copy to land:
 
 ```sh
-./backup-github.sh -o wmar-dev -w ~/github-mirrors -d /Volumes/Backups/github -a
+./backup-github.sh -o your-username -w ~/github-mirrors -d /Volumes/Backups/github -a
 ```
 
 ### Examples
 
-Back up all repos owned by `wmar-dev`:
+Back up all repos owned by a user or org:
 
 ```sh
-./backup-github.sh -o wmar-dev
+./backup-github.sh -o your-username
 ```
 
 Back up repos and gists, then archive:
 
 ```sh
-./backup-github.sh -o wmar-dev -g -a
+./backup-github.sh -o your-username -g -a
 ```
 
 Back up into a custom location (e.g. an external drive):
 
 ```sh
-./backup-github.sh -o wmar-dev -d /Volumes/Backups/github
+./backup-github.sh -o your-username -d /Volumes/Backups/github
 ```
 
 ## How it works
@@ -103,7 +103,7 @@ git clone /path/to/backups/<owner>/repos/<repo-name>.git restored-repo
 1. Extract the archive:
 
    ```sh
-   tar -xzf wmar-dev-20260918-084938.tar.gz -C /path/to/extract
+   tar -xzf your-username-20260918-084938.tar.gz -C /path/to/extract
    ```
 
    This produces `/path/to/extract/repos/<repo-name>.git` (and
@@ -129,5 +129,5 @@ To run automatically (e.g. nightly), add a cron or launchd job that calls
 the script, for example via crontab:
 
 ```
-0 2 * * * /Users/wmar/Developer/github-backup/backup-github.sh -o wmar-dev -w ~/github-mirrors -d /Volumes/Backups/github -g -a >> /Users/wmar/Developer/github-backup/cron.log 2>&1
+0 2 * * * /path/to/github-backup/backup-github.sh -o your-username -w ~/github-mirrors -d /Volumes/Backups/github -g -a >> /path/to/github-backup/cron.log 2>&1
 ```
